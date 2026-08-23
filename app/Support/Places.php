@@ -57,6 +57,16 @@ class Places
             $index = array_key_last($cities);
         }
 
+        // Súradnice mesta (aby sa dalo pripnúť na mapu). Geokódujeme len raz —
+        // aj neúspešný pokus zapíše lat/lng ako null, takže sa Nominatim nevolá
+        // pri každom uložení momentu. Dopĺňanie starých miest rieši
+        // `php artisan places:geocode-cities`.
+        if (! array_key_exists('lat', $cities[$index])) {
+            $geo = Geocoder::search(trim($cityName) . ', ' . $country->name);
+            $cities[$index]['lat'] = $geo['lat'] ?? null;
+            $cities[$index]['lng'] = $geo['lng'] ?? null;
+        }
+
         if ($momentSlug && ! in_array($momentSlug, $cities[$index]['momentIds'] ?? [], true)) {
             $cities[$index]['momentIds'][] = $momentSlug;
         }
