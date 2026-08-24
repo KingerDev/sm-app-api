@@ -4,11 +4,14 @@ namespace App\Models;
 
 use App\Support\SkDate;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Storage;
 
 /** Momentka („chvíľka") — mikro-poznámka z bežného dňa, voliteľne s fotkou. */
 class Note extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'text', 'who', 'place', 'place_short', 'date', 'photo_path', 'photo_thumb_path',
     ];
@@ -43,7 +46,11 @@ class Note extends Model
     protected static function booted(): void
     {
         static::deleting(function (Note $note) {
-            \App\Support\Images::delete($note->photo_path, $note->photo_thumb_path);
+            // Pri mäkkom mazaní fotku nechávame — inak by sa chvíľka dala vrátiť
+            // len ako text a obrázok by bol nenávratne preč.
+            if ($note->isForceDeleting()) {
+                \App\Support\Images::delete($note->photo_path, $note->photo_thumb_path);
+            }
         });
     }
 }

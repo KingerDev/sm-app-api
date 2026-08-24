@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Capsule;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 class ApiTest extends TestCase
@@ -34,6 +35,41 @@ class ApiTest extends TestCase
         $this->getJson('/api/v1/stats')->assertOk()->assertJsonStructure([
             'days_together', 'photos', 'countries', 'cities', 'bucket_done', 'bucket_total',
         ]);
+    }
+
+    public function test_deleted_note_can_be_restored_with_its_photo(): void
+    {
+        $this->actingAs($this->actingUser());
+
+        $created = $this->postJson('/api/v1/notes', ['text' => 'Zmokli sme', 'who' => 'M'])
+            ->assertCreated()
+            ->json();
+
+        $id = $created['id'];
+
+        $this->deleteJson("/api/v1/notes/{$id}")->assertNoContent();
+        $this->getJson('/api/v1/notes')->assertJsonMissing(['text' => 'Zmokli sme']);
+
+        $this->postJson("/api/v1/notes/{$id}/restore")->assertOk();
+        $this->getJson('/api/v1/notes')->assertJsonFragment(['text' => 'Zmokli sme']);
+    }
+
+    public function test_client_errors_are_logged_and_require_auth(): void
+    {
+        // Bez prihlásenia sa hlásenie neprijme — endpoint nesmie byť otvorený svetu.
+        $this->postJson('/api/v1/client-errors', ['message' => 'x'])->assertUnauthorized();
+
+        Log::shouldReceive('channel')->with('client')->once()->andReturnSelf();
+        Log::shouldReceive('error')->once();
+
+        $this->actingAs($this->actingUser());
+
+        $this->postJson('/api/v1/client-errors', [
+            'message'  => 'Cannot read property of undefined',
+            'stack'    => 'at Wrapped (app/wrapped.tsx:1)',
+            'fatal'    => true,
+            'platform' => 'android',
+        ])->assertNoContent();
     }
 
     public function test_moment_crud_generates_slug_and_slovak_dates(): void

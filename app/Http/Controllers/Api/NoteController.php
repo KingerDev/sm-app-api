@@ -97,9 +97,20 @@ class NoteController extends Controller
 
     public function destroy(int $id): JsonResponse
     {
-        Note::findOrFail($id)->delete(); // súbory zmaže model event
+        // Mäkké mazanie — appka hneď po ňom ponúka „vrátiť". Fotka ostáva na disku,
+        // kým sa chvíľka nezmaže natvrdo (`forceDelete`).
+        Note::findOrFail($id)->delete();
 
         return response()->json(null, 204);
+    }
+
+    /** Vráti zmazanú chvíľku (tlačidlo „vrátiť" hneď po zmazaní). */
+    public function restore(int $id): JsonResponse
+    {
+        $note = Note::withTrashed()->findOrFail($id);
+        $note->restore();
+
+        return response()->json($note->fresh());
     }
 
     /** Založí krajinu/mesto na mape, ak chvíľka prišla s novým miestom. */

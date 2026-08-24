@@ -28,6 +28,9 @@ Route::prefix('v1')->group(function () {
 
         Route::get('/stats', [StatsController::class, 'index']);
 
+        // Pády natívnej appky
+        Route::post('/client-errors', [\App\Http\Controllers\Api\ClientErrorController::class, 'store']);
+
         Route::get('/settings', [SettingsController::class, 'index']);
         Route::patch('/settings', [SettingsController::class, 'update']);
 
@@ -42,6 +45,7 @@ Route::prefix('v1')->group(function () {
         // POST kvôli multipart uploadu fotky (PHP nespracuje súbory v PATCH)
         Route::match(['patch', 'post'], '/notes/{id}', [NoteController::class, 'update'])->whereNumber('id');
         Route::delete('/notes/{id}', [NoteController::class, 'destroy']);
+        Route::post('/notes/{id}/restore', [NoteController::class, 'restore']);
 
         Route::post('/photos', [PhotoController::class, 'store']);
         Route::post('/photos/video', [PhotoController::class, 'storeVideo']);

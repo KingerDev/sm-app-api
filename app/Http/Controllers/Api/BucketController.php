@@ -25,6 +25,10 @@ class BucketController extends Controller
                 'items' => $cat->items->map(fn($item) => [
                     'id'  => $item->id,
                     'done' => $item->is_done,
+                    // Kedy sa odškrtlo — vlastný stĺpec neexistuje, takže rovnako
+                    // ako WrappedBuilder berieme updated_at. Wrapped z toho ráta,
+                    // čo ste splnili v danom roku.
+                    'done_at' => $item->is_done ? $item->updated_at?->toDateString() : null,
                     'txt'  => $item->text,
                     'sub'  => $item->sub_text,
                 ]),

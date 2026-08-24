@@ -58,6 +58,15 @@ return [
             'ignore_exceptions' => false,
         ],
 
+        // Chyby z natívnej appky — oddelené, nech sa nemiešajú so serverovými.
+        'client' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/client.log'),
+            'level' => 'debug',
+            'days' => 30,
+            'replace_placeholders' => true,
+        ],
+
         'single' => [
             'driver' => 'single',
             'path' => storage_path('logs/laravel.log'),
