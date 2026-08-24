@@ -70,6 +70,34 @@ class BucketController extends Controller
         ], 201);
     }
 
+    /** Premenovanie kategórie a zmena ikony. Slug ostáva — visia na ňom položky. */
+    public function updateCategory(Request $request, string $slug): JsonResponse
+    {
+        $data = $request->validate([
+            'name' => 'sometimes|required|string|max:60',
+            'icon' => 'sometimes|required|string|max:10',
+        ]);
+
+        $cat = BucketCategory::where('slug', $slug)->firstOrFail();
+        $cat->update($data);
+        $cat->load('items');
+
+        return response()->json([
+            'id'    => $cat->slug,
+            'icon'  => $cat->icon,
+            'name'  => $cat->name,
+            'done'  => $cat->items->where('is_done', true)->count(),
+            'total' => $cat->items->count(),
+            'items' => $cat->items->map(fn ($item) => [
+                'id'      => $item->id,
+                'done'    => $item->is_done,
+                'done_at' => $item->is_done ? $item->updated_at?->toDateString() : null,
+                'txt'     => $item->text,
+                'sub'     => $item->sub_text,
+            ]),
+        ]);
+    }
+
     public function destroyCategory(string $slug): JsonResponse
     {
         BucketCategory::where('slug', $slug)->firstOrFail()->delete();

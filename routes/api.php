@@ -56,6 +56,7 @@ Route::prefix('v1')->group(function () {
 
         Route::get('/bucket', [BucketController::class, 'index']);
         Route::post('/bucket/categories', [BucketController::class, 'storeCategory']);
+        Route::patch('/bucket/categories/{slug}', [BucketController::class, 'updateCategory']);
         Route::delete('/bucket/categories/{slug}', [BucketController::class, 'destroyCategory']);
         Route::post('/bucket/{categorySlug}/items', [BucketController::class, 'storeItem']);
         Route::patch('/bucket/items/{id}/toggle', [BucketController::class, 'toggleItem']);

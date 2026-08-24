@@ -37,6 +37,22 @@ class ApiTest extends TestCase
         ]);
     }
 
+    public function test_bucket_category_can_be_renamed_and_reiconed(): void
+    {
+        $this->actingAs($this->actingUser());
+
+        $cat = $this->postJson('/api/v1/bucket/categories', ['name' => 'Cestovanie', 'icon' => '✈'])
+            ->assertCreated()
+            ->json();
+
+        $this->patchJson("/api/v1/bucket/categories/{$cat['id']}", ['name' => 'Výlety', 'icon' => '🏔'])
+            ->assertOk()
+            ->assertJsonFragment(['name' => 'Výlety', 'icon' => '🏔']);
+
+        // Slug ostáva rovnaký, inak by sa stratila väzba na položky.
+        $this->getJson('/api/v1/bucket')->assertJsonFragment(['id' => $cat['id'], 'name' => 'Výlety']);
+    }
+
     public function test_deleted_note_can_be_restored_with_its_photo(): void
     {
         $this->actingAs($this->actingUser());
