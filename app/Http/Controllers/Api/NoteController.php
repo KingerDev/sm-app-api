@@ -30,6 +30,8 @@ class NoteController extends Controller
             'country'     => 'nullable|string|max:80',
             'date'        => 'nullable|date',
             'file'        => 'nullable|file|image|max:40960',
+            'video'       => 'nullable|file|mimetypes:video/mp4,video/quicktime,video/x-m4v|max:204800',
+            'poster'      => 'nullable|file|image|max:40960',
         ]);
 
         // Prepojenie na mapu — založí krajinu/mesto ako pri momentoch
@@ -43,10 +45,18 @@ class NoteController extends Controller
             'date'        => $data['date'] ?? now()->toDateString(),
         ]);
 
-        if ($file = $request->file('file')) {
+        if ($video = $request->file('video')) {
+            // Video sa neprekódováva — prichádza už zmenšené zo zariadenia,
+            // rovnako ako pri momentoch. Poster je snímka z videa.
+            $stored = Images::storeVideo($video, $request->file('poster'), 'photos/notes');
+            $note->photo_path = $stored['path'];
+            $note->photo_thumb_path = $stored['poster_thumb_path'];
+            $note->kind = 'video';
+        } elseif ($file = $request->file('file')) {
             $stored = Images::store($file, 'photos/notes');
             $note->photo_path = $stored['path'];
             $note->photo_thumb_path = $stored['thumb_path'];
+            $note->kind = 'photo';
         }
 
         $note->save();
@@ -65,6 +75,8 @@ class NoteController extends Controller
             'country'     => 'nullable|string|max:80',
             'date'        => 'nullable|date',
             'file'        => 'nullable|file|image|max:40960',
+            'video'       => 'nullable|file|mimetypes:video/mp4,video/quicktime,video/x-m4v|max:204800',
+            'poster'      => 'nullable|file|image|max:40960',
             'remove_photo' => 'nullable|boolean',
         ]);
 
@@ -79,15 +91,23 @@ class NoteController extends Controller
             'date'        => $data['date'] ?? $note->date,
         ]);
 
-        if ($file = $request->file('file')) {
+        if ($video = $request->file('video')) {
+            Images::delete($note->photo_path, $note->photo_thumb_path);
+            $stored = Images::storeVideo($video, $request->file('poster'), 'photos/notes');
+            $note->photo_path = $stored['path'];
+            $note->photo_thumb_path = $stored['poster_thumb_path'];
+            $note->kind = 'video';
+        } elseif ($file = $request->file('file')) {
             Images::delete($note->photo_path, $note->photo_thumb_path);
             $stored = Images::store($file, 'photos/notes');
             $note->photo_path = $stored['path'];
             $note->photo_thumb_path = $stored['thumb_path'];
+            $note->kind = 'photo';
         } elseif ($request->boolean('remove_photo')) {
             Images::delete($note->photo_path, $note->photo_thumb_path);
             $note->photo_path = null;
             $note->photo_thumb_path = null;
+            $note->kind = 'photo';
         }
 
         $note->save();

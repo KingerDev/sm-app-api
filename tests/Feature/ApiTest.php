@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Models\Capsule;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class ApiTest extends TestCase
@@ -35,6 +37,28 @@ class ApiTest extends TestCase
         $this->getJson('/api/v1/stats')->assertOk()->assertJsonStructure([
             'days_together', 'photos', 'countries', 'cities', 'bucket_done', 'bucket_total',
         ]);
+    }
+
+    public function test_note_can_hold_a_video_with_poster(): void
+    {
+        Storage::fake('public');
+        $this->actingAs($this->actingUser());
+
+        $note = $this->postJson('/api/v1/notes', [
+            'text'   => 'Hráme UNO',
+            'video'  => UploadedFile::fake()->create('klip.mp4', 800, 'video/mp4'),
+            'poster' => UploadedFile::fake()->image('poster.jpg', 800, 600),
+        ])->assertCreated()->json();
+
+        $this->assertTrue($note['is_video']);
+        $this->assertNotNull($note['photo_url']);      // samotné video
+        $this->assertNotNull($note['photo_thumb_url']); // poster
+
+        // Fotka po videu prepne druh späť
+        $this->postJson("/api/v1/notes/{$note['id']}", [
+            'text' => 'Hráme UNO',
+            'file' => UploadedFile::fake()->image('foto.jpg', 800, 600),
+        ])->assertOk()->assertJsonFragment(['is_video' => false]);
     }
 
     public function test_bucket_category_can_be_renamed_and_reiconed(): void
