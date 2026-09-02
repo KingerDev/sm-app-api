@@ -20,7 +20,12 @@ class PhotoController extends Controller
             'files'    => 'required|array|min:1',
             'files.*'  => 'file|image|max:40960',
             'taken_at' => 'nullable|date',
+            'full'     => 'nullable|boolean',
         ]);
+
+        // Web posiela originály — na zariadení cez ne nič nešlo, tak ich
+        // neprekódovávame. Natívna appka fotku zmenší už pred odoslaním.
+        $full = $request->boolean('full');
 
         $parent = $data['type'] === 'moment'
             ? Moment::findOrFail($data['id'])
@@ -28,9 +33,9 @@ class PhotoController extends Controller
 
         $maxSort = $parent->photos()->max('sort_order') ?? 0;
 
-        $photos = collect($request->file('files'))->values()->map(function ($file, $i) use ($parent, $data, $maxSort) {
-            // Optimalizácia: WebP max 2560 px + miniatúra (z ~25 MB ostane ~1 MB)
-            $stored = Images::store($file, $data['type'] === 'moment' ? 'photos/moments' : 'photos/capsules');
+        $photos = collect($request->file('files'))->values()->map(function ($file, $i) use ($parent, $data, $maxSort, $full) {
+            // Optimalizácia: WebP max 4096 px + miniatúra (z ~25 MB ostane ~1 MB)
+            $stored = Images::store($file, $data['type'] === 'moment' ? 'photos/moments' : 'photos/capsules', $full);
 
             return $parent->photos()->create([
                 ...$stored,
@@ -101,7 +106,10 @@ class PhotoController extends Controller
      */
     public function setCover(Request $request, int $id): JsonResponse
     {
-        $request->validate(['file' => 'nullable|file|image|max:40960']);
+        $request->validate([
+            'file' => 'nullable|file|image|max:40960',
+            'full' => 'nullable|boolean',
+        ]);
 
         $photo = Photo::findOrFail($id);
 
@@ -120,7 +128,7 @@ class PhotoController extends Controller
 
         if ($file = $request->file('file')) {
             Images::delete($photo->cover_path, $photo->cover_thumb_path);
-            $stored = Images::store($file, 'photos/covers');
+            $stored = Images::store($file, 'photos/covers', $request->boolean('full'));
             $data['cover_path'] = $stored['path'];
             $data['cover_thumb_path'] = $stored['thumb_path'];
         }

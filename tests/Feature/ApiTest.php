@@ -171,6 +171,35 @@ class ApiTest extends TestCase
         $this->assertArrayHasKey('thumb_url', $res->json()[0]);
     }
 
+    public function test_photo_upload_with_full_flag_keeps_the_original(): void
+    {
+        \Storage::fake('public');
+        $this->actingAs($this->actingUser());
+
+        $moment = \App\Models\Moment::create([
+            'slug' => 'original-test', 'title' => 'Originál', 'place' => 'doma',
+            'place_short' => 'doma', 'date_start' => '2026-07-02',
+            'date_display' => '2. júl 2026', 'date_short' => 'júl 2026', 'seed' => 'home',
+        ]);
+
+        $file = \Illuminate\Http\Testing\File::image('velka.jpg', 5000, 3750);
+        $original = file_get_contents($file->getRealPath());
+
+        $this->post('/api/v1/photos', [
+            'type' => 'moment', 'id' => $moment->id, 'files' => [$file], 'full' => '1',
+        ], ['Accept' => 'application/json'])->assertCreated();
+
+        $photo = \App\Models\Photo::first();
+
+        // fotka z webu ostáva bit po bite taká, aká prišla — bez zmenšenia aj WebP
+        $this->assertStringEndsWith('.jpg', $photo->path);
+        $this->assertSame($original, \Storage::disk('public')->get($photo->path));
+
+        // miniatúra sa robí aj tak
+        [$tw, $th] = getimagesizefromstring(\Storage::disk('public')->get($photo->thumb_path));
+        $this->assertLessThanOrEqual(480, max($tw, $th));
+    }
+
     public function test_cover_photo_moves_to_front(): void
     {
         \Storage::fake('public');

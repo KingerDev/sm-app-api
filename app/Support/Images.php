@@ -15,6 +15,11 @@ use Intervention\Image\ImageManager;
  * namiesto ~1 MB, ale nestráca detail; miniatúra ostáva malá, lebo sa
  * v mriežkach nikdy nezobrazuje vo veľkom.
  * EXIF rotácia sa aplikuje automaticky pri dekódovaní.
+ *
+ * Web posiela fotky s príznakom `full` — vtedy sa originál uloží tak, ako
+ * prišiel, bez zmenšenia a prekódovania. Z prehliadača ide fotka rovno
+ * z disku (žiadna kompresia na zariadení ako v natívnej appke), takže by
+ * WebP bolo jediné a zbytočné znehodnotenie. Miniatúra sa robí vždy.
  */
 class Images
 {
@@ -24,31 +29,49 @@ class Images
     private const THUMB_QUALITY = 75;
 
     /**
-     * Spracuje nahratú fotku do $dir na public disku.
+     * Spracuje nahratú fotku do $dir na public disku. S $full sa originál
+     * uloží nedotknutý (bez zmenšenia aj bez prekódovania).
      * Vracia ['path' => ..., 'thumb_path' => ...].
      */
-    public static function store(UploadedFile $file, string $dir): array
+    public static function store(UploadedFile $file, string $dir, bool $full = false): array
     {
         $manager = new ImageManager(new GdDriver());
         $image = $manager->decodePath($file->getRealPath());
 
+        $disk = Storage::disk(config('filesystems.media'));
         $base = Str::uuid()->toString();
-        $path = "{$dir}/{$base}.webp";
         $thumbPath = "{$dir}/{$base}-thumb.webp";
 
-        Storage::disk(config('filesystems.media'))->put(
-            $path,
-            (string) $image->scaleDown(self::MAX_DIMENSION, self::MAX_DIMENSION)
-                ->encode(new WebpEncoder(quality: self::MAX_QUALITY))
-        );
+        if ($full) {
+            $path = "{$dir}/{$base}.".self::extension($file);
+            $disk->put($path, file_get_contents($file->getRealPath()));
+        } else {
+            $path = "{$dir}/{$base}.webp";
+            $disk->put(
+                $path,
+                (string) $image->scaleDown(self::MAX_DIMENSION, self::MAX_DIMENSION)
+                    ->encode(new WebpEncoder(quality: self::MAX_QUALITY))
+            );
+        }
 
-        Storage::disk(config('filesystems.media'))->put(
+        $disk->put(
             $thumbPath,
             (string) $image->scaleDown(self::THUMB_DIMENSION, self::THUMB_DIMENSION)
                 ->encode(new WebpEncoder(quality: self::THUMB_QUALITY))
         );
 
         return ['path' => $path, 'thumb_path' => $thumbPath];
+    }
+
+    /**
+     * Prípona podľa skutočného typu súboru — klient ju v názve mať nemusí
+     * (napr. blob z editora) a podľa nej sa fotka servíruje z R2.
+     */
+    private static function extension(UploadedFile $file): string
+    {
+        $ext = strtolower($file->getClientOriginalExtension() ?: '');
+
+        return $ext !== '' ? $ext : ($file->guessExtension() ?: 'jpg');
     }
 
     /**

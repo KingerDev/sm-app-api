@@ -53,9 +53,26 @@ export default function PhotoEditor({ file, onCancel, onSave }) {
         cropperRef.current?.setAspectRatio(NaN);
     };
 
+    // Nedotknutá fotka ide na server v origináli — prekódovanie cez canvas by
+    // ju len zbytočne zhoršilo (a zahodilo EXIF), keď z nej používateľ nič nebral.
+    const untouched = () => {
+        const cropper = cropperRef.current;
+        if (!cropper) return false;
+        const { rotate, scaleX, scaleY } = cropper.getData();
+        if (rotate || scaleX === -1 || scaleY === -1) return false;
+        const { width, height } = cropper.getImageData();
+        const crop = cropper.getCropBoxData();
+        const canvasBox = cropper.getCanvasData();
+
+        return Math.abs(crop.width - canvasBox.width) < 1
+            && Math.abs(crop.height - canvasBox.height) < 1
+            && width > 0 && height > 0;
+    };
+
     const save = () => {
         if (busy) return;
         setBusy(true);
+        if (untouched()) { onSave(file); return; }
         const canvas = cropperRef.current?.getCroppedCanvas({
             maxWidth: 4096, maxHeight: 4096,
             imageSmoothingQuality: 'high',
@@ -65,7 +82,7 @@ export default function PhotoEditor({ file, onCancel, onSave }) {
             if (!blob) { setBusy(false); return; }
             const name = file.name.replace(/\.\w+$/, '') + '-upravene.jpg';
             onSave(new File([blob], name, { type: 'image/jpeg' }));
-        }, 'image/jpeg', 0.98);
+        }, 'image/jpeg', 1);
     };
 
     const toolBtn = {

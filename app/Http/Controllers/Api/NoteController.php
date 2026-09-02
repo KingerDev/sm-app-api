@@ -32,6 +32,7 @@ class NoteController extends Controller
             'file'        => 'nullable|file|image|max:40960',
             'video'       => 'nullable|file|mimetypes:video/mp4,video/quicktime,video/x-m4v|max:204800',
             'poster'      => 'nullable|file|image|max:40960',
+            'full'        => 'nullable|boolean',
         ]);
 
         // Prepojenie na mapu — založí krajinu/mesto ako pri momentoch
@@ -53,7 +54,7 @@ class NoteController extends Controller
             $note->photo_thumb_path = $stored['poster_thumb_path'];
             $note->kind = 'video';
         } elseif ($file = $request->file('file')) {
-            $stored = Images::store($file, 'photos/notes');
+            $stored = Images::store($file, 'photos/notes', $request->boolean('full'));
             $note->photo_path = $stored['path'];
             $note->photo_thumb_path = $stored['thumb_path'];
             $note->kind = 'photo';
@@ -77,6 +78,7 @@ class NoteController extends Controller
             'file'        => 'nullable|file|image|max:40960',
             'video'       => 'nullable|file|mimetypes:video/mp4,video/quicktime,video/x-m4v|max:204800',
             'poster'      => 'nullable|file|image|max:40960',
+            'full'        => 'nullable|boolean',
             'remove_photo' => 'nullable|boolean',
         ]);
 
@@ -99,7 +101,7 @@ class NoteController extends Controller
             $note->kind = 'video';
         } elseif ($file = $request->file('file')) {
             Images::delete($note->photo_path, $note->photo_thumb_path);
-            $stored = Images::store($file, 'photos/notes');
+            $stored = Images::store($file, 'photos/notes', $request->boolean('full'));
             $note->photo_path = $stored['path'];
             $note->photo_thumb_path = $stored['thumb_path'];
             $note->kind = 'photo';

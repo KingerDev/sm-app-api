@@ -23,6 +23,10 @@ php artisan media:sync s3 --from-url=https://...   # prenos médií
   `tinker`), sa musí spustiť **na serveri**. Lokálne fungujú len testy.
 - **Médiá idú na Cloudflare R2** (`MEDIA_DISK=s3`, `AWS_URL=https://media.kinger.dev`).
   Testy majú disk podvrhnutý cez `phpunit.xml`, na ostré úložisko sa nedostanú.
+- **Fotky z webu sa neprekódovávajú** — `resources/js/api.js` posiela ku každému
+  uploadu `full=1` a `Images::store` vtedy uloží originál tak, ako prišiel.
+  Natívna appka príznak neposiela, takže jej fotky idú ako predtým do WebP
+  (max 4096 px, q92). Miniatúra sa robí v oboch prípadoch.
 - **Mestá žijú ako JSON pole na krajine** (`countries.cities`), nie ako tabuľka.
   Pomocník je `App\Support\Places`.
 - **Wrapped sa nikde neukladá** — `App\Support\WrappedBuilder` ho ráta zo živých

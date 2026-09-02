@@ -27,6 +27,9 @@ async function request(method, url, body) {
     if (method !== 'GET') await ensureCsrf();
 
     const isForm = body instanceof FormData;
+    // Z webu ide fotka na server v origináli — na rozdiel od natívnej appky ju
+    // pred odoslaním nič nezmenšuje, tak nech ju server ani neprekódováva.
+    if (isForm && !body.has('full')) body.append('full', '1');
     const res = await fetch(url, {
         method,
         credentials: 'same-origin',
