@@ -171,6 +171,95 @@ class ApiTest extends TestCase
         $this->assertArrayHasKey('thumb_url', $res->json()[0]);
     }
 
+    public function test_photo_upload_stores_dimensions(): void
+    {
+        \Storage::fake('public');
+        $this->actingAs($this->actingUser());
+
+        $moment = \App\Models\Moment::create([
+            'slug' => 'rozmery-test', 'title' => 'Rozmery', 'place' => 'doma',
+            'place_short' => 'doma', 'date_start' => '2026-07-03',
+            'date_display' => '3. júl 2026', 'date_short' => 'júl 2026', 'seed' => 'home',
+        ]);
+
+        // fotka na výšku — appka podľa toho vyberá políčko v koláži
+        $res = $this->post('/api/v1/photos', [
+            'type' => 'moment', 'id' => $moment->id,
+            'files' => [\Illuminate\Http\Testing\File::image('nastojato.jpg', 1200, 1600)],
+        ], ['Accept' => 'application/json'])->assertCreated();
+
+        $photo = \App\Models\Photo::first();
+        $this->assertSame(1200, $photo->width);
+        $this->assertSame(1600, $photo->height);
+
+        // rozmery musia prísť aj do appky, inak jej sú nanič
+        $this->assertSame(1200, $res->json('0.width'));
+        $this->assertSame(1600, $res->json('0.height'));
+
+        // a musia sedieť so súborom, ktorý sa naozaj uložil
+        [$w, $h] = getimagesizefromstring(\Storage::disk('public')->get($photo->path));
+        $this->assertSame([$w, $h], [$photo->width, $photo->height]);
+    }
+
+    public function test_large_photo_keeps_dimensions_of_the_stored_file(): void
+    {
+        \Storage::fake('public');
+        $this->actingAs($this->actingUser());
+
+        $moment = \App\Models\Moment::create([
+            'slug' => 'velka-test', 'title' => 'Veľká', 'place' => 'doma',
+            'place_short' => 'doma', 'date_start' => '2026-07-04',
+            'date_display' => '4. júl 2026', 'date_short' => 'júl 2026', 'seed' => 'home',
+        ]);
+
+        $this->post('/api/v1/photos', [
+            'type' => 'moment', 'id' => $moment->id,
+            'files' => [\Illuminate\Http\Testing\File::image('velka.jpg', 5000, 3750)],
+        ], ['Accept' => 'application/json'])->assertCreated();
+
+        $photo = \App\Models\Photo::first();
+
+        // uložená je zmenšená verzia — rozmery patria jej, nie originálu
+        $this->assertSame(4096, $photo->width);
+        $this->assertSame(3072, $photo->height);
+    }
+
+    public function test_photo_caption_is_saved_trimmed_and_can_be_cleared(): void
+    {
+        \Storage::fake('public');
+        $this->actingAs($this->actingUser());
+
+        $moment = \App\Models\Moment::create([
+            'slug' => 'popisok-test', 'title' => 'Popisok', 'place' => 'doma',
+            'place_short' => 'doma', 'date_start' => '2026-07-05',
+            'date_display' => '5. júl 2026', 'date_short' => 'júl 2026', 'seed' => 'home',
+        ]);
+
+        $this->post('/api/v1/photos', [
+            'type' => 'moment', 'id' => $moment->id,
+            'files' => [\Illuminate\Http\Testing\File::image('a.jpg', 800, 600)],
+        ], ['Accept' => 'application/json'])->assertCreated();
+
+        $photo = \App\Models\Photo::first();
+
+        $this->patchJson("/api/v1/photos/{$photo->id}", ['caption' => '  Tu ma naučila plávať  '])
+            ->assertOk()
+            ->assertJsonPath('caption', 'Tu ma naučila plávať');
+
+        // popisok chodí aj s momentom, inak ho appka pri fotke nemá odkiaľ vziať
+        $photos = $this->getJson('/api/v1/moments/popisok-test')->json('photos');
+        $this->assertSame('Tu ma naučila plávať', $photos[0]['caption']);
+
+        // prázdny text popisok zmaže
+        $this->patchJson("/api/v1/photos/{$photo->id}", ['caption' => '  '])
+            ->assertOk()
+            ->assertJsonPath('caption', null);
+
+        // dlhší text ako rozloženie unesie sa neuloží
+        $this->patchJson("/api/v1/photos/{$photo->id}", ['caption' => str_repeat('a', 161)])
+            ->assertStatus(422);
+    }
+
     public function test_photo_upload_with_full_flag_keeps_the_original(): void
     {
         \Storage::fake('public');

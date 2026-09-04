@@ -11,6 +11,7 @@ class Photo extends Model
     protected $fillable = [
         'photoable_type', 'photoable_id', 'kind', 'path', 'thumb_path', 'cover_path', 'cover_thumb_path',
         'duration', 'poster_path', 'poster_thumb_path',
+        'width', 'height', 'caption',
         'is_pinned', 'is_cover', 'taken_at', 'sort_order',
     ];
 
@@ -19,6 +20,8 @@ class Photo extends Model
         'is_cover'  => 'boolean',
         'taken_at'  => 'date',
         'duration'  => 'integer',
+        'width'     => 'integer',
+        'height'    => 'integer',
     ];
 
     protected $appends = ['url', 'thumb_url', 'cover_url', 'cover_thumb_url', 'is_video', 'poster_url'];

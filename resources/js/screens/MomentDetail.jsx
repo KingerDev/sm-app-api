@@ -26,7 +26,7 @@ export default function MomentDetail({ slug, onBack, navigate }) {
     const real = (m.photos || []).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
     const hasReal = real.length > 0;
     const items = hasReal
-        ? real.map(p => ({ id: p.id, url: p.url, thumb: p.thumb_url || p.url, pinned: !!p.is_pinned, cover: !!p.is_cover, real: true }))
+        ? real.map(p => ({ id: p.id, url: p.url, thumb: p.thumb_url || p.url, pinned: !!p.is_pinned, cover: !!p.is_cover, real: true, isVideo: !!p.is_video, caption: p.caption ?? null }))
         : Array.from({ length: Math.min(m.photos_count || 0, 12) }).map((_, i) => ({
             id: `ph-${i}`, url: photoUrl({ seed: m.seed, index: i }), pinned: false, real: false,
         }));
@@ -63,6 +63,14 @@ export default function MomentDetail({ slug, onBack, navigate }) {
         await api.post(`/photos/${photo.id}/cover`, fd);
         await refresh('moments');
     });
+
+    // Popisok fotky. Chyba sa nechytá do `wrap` — Lightbox ju potrebuje vidieť,
+    // aby vedel, že text neuložil a nesmie panel zavrieť.
+    const setCaption = async (photo, caption) => {
+        if (!photo.real) return;
+        await api.patch(`/photos/${photo.id}`, { caption });
+        await refresh('moments');
+    };
 
     const deletePhoto = wrap(async (photo) => {
         if (!photo.real) return;
@@ -234,6 +242,7 @@ export default function MomentDetail({ slug, onBack, navigate }) {
                                 onClick={() => setLightbox(i)}
                                 style={{ aspectRatio: '1', borderRadius: 4, cursor: 'pointer' }}>
                                 {p.real && <PhotoHeart pinned={p.pinned} onClick={(e) => { e.stopPropagation(); togglePin(p); }} />}
+                                {p.caption && <PhotoNote />}
                             </Photo>
                         ))}
                     </div>
@@ -375,6 +384,7 @@ export default function MomentDetail({ slug, onBack, navigate }) {
                     onTogglePin={togglePin}
                     onDelete={deletePhoto}
                     onSetCover={setCover}
+                    onSetCaption={setCaption}
                 />
             )}
 
@@ -431,6 +441,7 @@ export default function MomentDetail({ slug, onBack, navigate }) {
                                                 borderRadius: '50%', width: 26, height: 26,
                                                 display: 'grid', placeItems: 'center', color: 'var(--paper)',
                                             }}>{cloneElement(Icons.trash, { style: { width: 14, height: 14 } })}</button>
+                                            {p.caption && <PhotoNote />}
                                         </>
                                     ) : (
                                         i < pinnedCount && (
@@ -449,6 +460,21 @@ export default function MomentDetail({ slug, onBack, navigate }) {
         </>
     );
 }
+
+/*
+ * Značka, že fotka má svoj popisok. Bez nej by sa o popiskoch nedalo dozvedieť
+ * inak než otvorením každej fotky zvlášť.
+ */
+const PhotoNote = () => (
+    <div style={{
+        position: 'absolute', bottom: 5, left: 5,
+        background: 'rgba(20,30,22,0.45)', borderRadius: '50%',
+        width: 20, height: 20, display: 'grid', placeItems: 'center',
+        color: 'var(--paper)',
+    }}>
+        {cloneElement(Icons.edit, { style: { width: 11, height: 11 } })}
+    </div>
+);
 
 /* Srdiečko na fotke — prepnutie pripnutia */
 const PhotoHeart = ({ pinned, onClick }) => (

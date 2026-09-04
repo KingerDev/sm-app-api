@@ -31,7 +31,10 @@ class Images
     /**
      * Spracuje nahratú fotku do $dir na public disku. S $full sa originál
      * uloží nedotknutý (bez zmenšenia aj bez prekódovania).
-     * Vracia ['path' => ..., 'thumb_path' => ...].
+     * Vracia ['path' => ..., 'thumb_path' => ..., 'width' => ..., 'height' => ...].
+     *
+     * Rozmery patria k `path`, nie k miniatúre — appka podľa nich vyberá, do
+     * ktorého políčka koláže fotka sadne, a kam ju v ňom oreže.
      */
     public static function store(UploadedFile $file, string $dir, bool $full = false): array
     {
@@ -42,16 +45,24 @@ class Images
         $base = Str::uuid()->toString();
         $thumbPath = "{$dir}/{$base}-thumb.webp";
 
+        // Po dekódovaní je EXIF rotácia už zarátaná, takže sedia aj fotky
+        // odfotené nastojato — v súbore sú na šírku a v hlavičke otočené.
+        $width = $image->width();
+        $height = $image->height();
+
         if ($full) {
             $path = "{$dir}/{$base}.".self::extension($file);
             $disk->put($path, file_get_contents($file->getRealPath()));
         } else {
             $path = "{$dir}/{$base}.webp";
+            // scaleDown mení ten istý obrázok, z ktorého sa potom robí miniatúra
+            $scaled = $image->scaleDown(self::MAX_DIMENSION, self::MAX_DIMENSION);
             $disk->put(
                 $path,
-                (string) $image->scaleDown(self::MAX_DIMENSION, self::MAX_DIMENSION)
-                    ->encode(new WebpEncoder(quality: self::MAX_QUALITY))
+                (string) $scaled->encode(new WebpEncoder(quality: self::MAX_QUALITY))
             );
+            $width = $scaled->width();
+            $height = $scaled->height();
         }
 
         $disk->put(
@@ -60,7 +71,7 @@ class Images
                 ->encode(new WebpEncoder(quality: self::THUMB_QUALITY))
         );
 
-        return ['path' => $path, 'thumb_path' => $thumbPath];
+        return ['path' => $path, 'thumb_path' => $thumbPath, 'width' => $width, 'height' => $height];
     }
 
     /**
@@ -82,7 +93,7 @@ class Images
      * Poster je snímka z videa vygenerovaná na zariadení; prejde tou istou
      * obrázkovou linkou ako fotky, takže sa v mriežkach správa rovnako.
      *
-     * Vracia ['path', 'poster_path', 'poster_thumb_path'].
+     * Vracia ['path', 'poster_path', 'poster_thumb_path', 'width', 'height'].
      */
     public static function storeVideo(UploadedFile $video, ?UploadedFile $poster, string $dir): array
     {
@@ -95,13 +106,17 @@ class Images
             file_get_contents($video->getRealPath())
         );
 
-        $poster_paths = ['poster_path' => null, 'poster_thumb_path' => null];
+        // Rozmery videa berieme z poster snímky — je to ten istý obraz a mriežky
+        // aj koláže s videom pracujú cez ňu.
+        $poster_paths = ['poster_path' => null, 'poster_thumb_path' => null, 'width' => null, 'height' => null];
 
         if ($poster) {
             $stored = self::store($poster, $dir);
             $poster_paths = [
                 'poster_path'       => $stored['path'],
                 'poster_thumb_path' => $stored['thumb_path'],
+                'width'             => $stored['width'],
+                'height'            => $stored['height'],
             ];
         }
 

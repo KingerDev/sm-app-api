@@ -49,6 +49,7 @@ Route::prefix('v1')->group(function () {
 
         Route::post('/photos', [PhotoController::class, 'store']);
         Route::post('/photos/video', [PhotoController::class, 'storeVideo']);
+        Route::patch('/photos/{id}', [PhotoController::class, 'update'])->whereNumber('id');
         Route::patch('/photos/{id}/pin', [PhotoController::class, 'togglePin']);
         // POST kvôli multipart uploadu výrezu (PHP nespracuje súbory v PATCH)
         Route::match(['patch', 'post'], '/photos/{id}/cover', [PhotoController::class, 'setCover']);

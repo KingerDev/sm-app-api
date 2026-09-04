@@ -37,6 +37,16 @@ class CollageBuilder
         'caption' => 3,
     ];
 
+    /**
+     * Kam sa fotka oreže, keď je vyššia než políčko: 38 % prebytku ide dole
+     * z vrchu, zvyšok zospodu. Stred by ľuďom rezal hlavy — tie sú v hornej
+     * polovici záberu takmer vždy.
+     *
+     * To isté číslo má appka v src/lib/photoFit.ts; keď sa mení, mení sa na
+     * oboch stranách, inak sa koláž zo servera a z telefónu rozídu.
+     */
+    private const FOCUS_Y = 0.38;
+
     private const PAPER = '#fafaf7';
     private const GREEN = '#2d5a3d';
     private const INK = '#3a3a36';
@@ -620,7 +630,7 @@ class CollageBuilder
             if (empty($photos[$i])) {
                 continue;
             }
-            $photo = rescue(fn () => $m->decodeBinary($photos[$i])->cover($w, $h), null, false);
+            $photo = self::fit($m, $photos[$i], $w, $h);
             if ($photo) {
                 $mosaic->insert($photo, $x - $hx, $y - $hy, 'top-left');
             }
@@ -757,7 +767,7 @@ class CollageBuilder
         float $tilt,
         ?string $caption,
     ): void {
-        $photo = rescue(fn () => $m->decodeBinary($bytes)->cover($w, $h), null, false);
+        $photo = self::fit($m, $bytes, $w, $h);
         if (! $photo) {
             return;
         }
@@ -792,6 +802,34 @@ class CollageBuilder
             (int) ($y - $pad - ($card->height() - $cardH) / 2),
             'top-left',
         );
+    }
+
+    /**
+     * Fotka orezaná do políčka $w × $h. Ako `cover()`, len vodorovný rez
+     * neberie zo stredu, ale s posunom nahor (viď FOCUS_Y).
+     *
+     * Chybnú fotku prehltne — koláž radšej vynechá políčko, než by spadla.
+     */
+    private static function fit(ImageManager $m, string $bytes, int $w, int $h): ?ImageInterface
+    {
+        return rescue(function () use ($m, $bytes, $w, $h) {
+            $img = $m->decodeBinary($bytes);
+
+            // Zmenšenie na pokrytie políčka: rozhoduje väčší z oboch pomerov,
+            // inak by po oreze ostal prázdny pruh.
+            $k = max($w / $img->width(), $h / $img->height());
+            $img->resize((int) ceil($img->width() * $k), (int) ceil($img->height() * $k));
+
+            $overX = max(0, $img->width() - $w);
+            $overY = max(0, $img->height() - $h);
+
+            return $img->crop(
+                $w,
+                $h,
+                (int) round($overX / 2),
+                (int) round($overY * self::FOCUS_Y),
+            );
+        }, null, false);
     }
 
     /**
@@ -861,7 +899,7 @@ class CollageBuilder
     ): void {
         // Poškodený alebo neobrázkový súbor nesmie zhodiť celú koláž — políčko
         // zostane prázdne a zvyšok sa vykreslí.
-        $photo = rescue(fn () => $m->decodeBinary($bytes)->cover($w, $h), null, false);
+        $photo = self::fit($m, $bytes, $w, $h);
         if (! $photo) {
             return;
         }
