@@ -64,7 +64,11 @@ export default function App() {
         if (!overlay) return null;
 
         if (overlay.startsWith('moment:')) {
-            return <MomentDetail slug={overlay.slice(7)} onBack={close} navigate={navigate} />;
+            // „moment:slug?photo=12" — Domov ňou otvára rozhovor pri konkrétnej fotke
+            const [slug, query] = overlay.slice(7).split('?');
+            const photo = new URLSearchParams(query || '').get('photo');
+
+            return <MomentDetail slug={slug} photo={photo} onBack={close} navigate={navigate} />;
         }
         if (overlay === 'moment-add') {
             return <MomentForm onBack={close} navigate={navigate} />;

@@ -1,16 +1,19 @@
 // Detail momentu — hero, pripnuté, mriežka fotiek, menu (podľa design/hifi-moment.jsx)
-import { cloneElement, useRef, useState } from 'react';
+import { cloneElement, useEffect, useRef, useState } from 'react';
 import { api } from '../api';
 import { useStore } from '../store';
 import { Icons, Photo, Sheet, coverSrc, photoUrl } from '../components/shell';
 import Lightbox from '../components/Lightbox';
+import { lastCommentId, markSeen } from '../lib/photoTalk';
 import PhotoEditor from '../components/PhotoEditor';
 import CoverPicker from '../components/CoverPicker';
 
-export default function MomentDetail({ slug, onBack, navigate }) {
-    const { moments, refresh } = useStore();
+export default function MomentDetail({ slug, photo: photoParam, onBack, navigate }) {
+    const { moments, refresh, user } = useStore();
     const [sheet, setSheet] = useState(null); // 'menu' | 'all'
     const [lightbox, setLightbox] = useState(null); // index otvorenej fotky
+    const [thread, setThread] = useState(false);
+    const openedFromLink = useRef(false);
     const [progress, setProgress] = useState(null); // { done, total } počas nahrávania
     const uploading = progress !== null;
     const [pending, setPending] = useState([]); // { file, url } — vybrané, ešte nenahraté
@@ -26,7 +29,7 @@ export default function MomentDetail({ slug, onBack, navigate }) {
     const real = (m.photos || []).slice().sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
     const hasReal = real.length > 0;
     const items = hasReal
-        ? real.map(p => ({ id: p.id, url: p.url, thumb: p.thumb_url || p.url, pinned: !!p.is_pinned, cover: !!p.is_cover, real: true, isVideo: !!p.is_video, caption: p.caption ?? null }))
+        ? real.map(p => ({ id: p.id, url: p.url, thumb: p.thumb_url || p.url, pinned: !!p.is_pinned, cover: !!p.is_cover, real: true, isVideo: !!p.is_video, comments: p.comments ?? [] }))
         : Array.from({ length: Math.min(m.photos_count || 0, 12) }).map((_, i) => ({
             id: `ph-${i}`, url: photoUrl({ seed: m.seed, index: i }), pinned: false, real: false,
         }));
@@ -40,6 +43,20 @@ export default function MomentDetail({ slug, onBack, navigate }) {
         setError(null);
         try { await fn(...args); } catch (e) { setError(e.message || 'Akcia zlyhala.'); }
     };
+
+    // Otvorenie konkrétnej fotky z Domova („napísala ti"). Len raz — inak by sa
+    // lightbox znovu otvoril po každom zavretí.
+    useEffect(() => {
+        if (openedFromLink.current || !photoParam) return;
+
+        const at = items.findIndex(it => String(it.id) === String(photoParam));
+        if (at < 0) return;
+
+        openedFromLink.current = true;
+        markSeen(items[at].id, lastCommentId(items[at]));
+        setThread(true);
+        setLightbox(at);
+    }, [photoParam, items]);
 
     const togglePin = wrap(async (photo) => {
         if (!photo.real) return;
@@ -64,13 +81,29 @@ export default function MomentDetail({ slug, onBack, navigate }) {
         await refresh('moments');
     });
 
-    // Popisok fotky. Chyba sa nechytá do `wrap` — Lightbox ju potrebuje vidieť,
-    // aby vedel, že text neuložil a nesmie panel zavrieť.
-    const setCaption = async (photo, caption) => {
+    // Rozhovor pod fotkou. Chyby sa nechytajú do `wrap` — Lightbox ich potrebuje
+    // vidieť, aby vedel, že správa neodišla, a nezahodil napísaný text.
+    const addComment = async (photo, text) => {
         if (!photo.real) return;
-        await api.patch(`/photos/${photo.id}`, { caption });
+        await api.post(`/photos/${photo.id}/comments`, { text });
         await refresh('moments');
     };
+
+    const deleteComment = wrap(async (_photo, commentId) => {
+        await api.delete(`/photo-comments/${commentId}`);
+        await refresh('moments');
+    });
+
+    const openThread = (photoId) => {
+        const at = items.findIndex(it => it.id === photoId);
+        if (at < 0) return;
+        markSeen(photoId, lastCommentId(items[at]));
+        setThread(true);
+        setLightbox(at);
+    };
+
+    // Otvorený rozhovor je prečítaný — Domov ho potom prestane ponúkať.
+    const seen = (photo) => photo.real && markSeen(photo.id, lastCommentId(photo));
 
     const deletePhoto = wrap(async (photo) => {
         if (!photo.real) return;
@@ -219,6 +252,7 @@ export default function MomentDetail({ slug, onBack, navigate }) {
                                                 onClick={() => setLightbox(items.findIndex(it => it.id === p.id))}
                                                 style={{ width: 180, height: 230, borderRadius: 14, flexShrink: 0, cursor: 'pointer' }}>
                                                 <PhotoHeart pinned onClick={(e) => { e.stopPropagation(); togglePin(p); }} />
+                                                <PhotoChat count={p.comments?.length ?? 0} onClick={() => openThread(p.id)} />
                                             </Photo>
                                         ))
                                         : Array.from({ length: pinnedCount }).map((_, i) => (
@@ -242,7 +276,7 @@ export default function MomentDetail({ slug, onBack, navigate }) {
                                 onClick={() => setLightbox(i)}
                                 style={{ aspectRatio: '1', borderRadius: 4, cursor: 'pointer' }}>
                                 {p.real && <PhotoHeart pinned={p.pinned} onClick={(e) => { e.stopPropagation(); togglePin(p); }} />}
-                                {p.caption && <PhotoNote />}
+                                <PhotoChat count={p.comments?.length ?? 0} onClick={() => openThread(p.id)} />
                             </Photo>
                         ))}
                     </div>
@@ -380,11 +414,15 @@ export default function MomentDetail({ slug, onBack, navigate }) {
                 <Lightbox
                     items={items}
                     index={lightbox}
-                    onClose={() => setLightbox(null)}
+                    onClose={() => { setLightbox(null); setThread(false); }}
                     onTogglePin={togglePin}
                     onDelete={deletePhoto}
                     onSetCover={setCover}
-                    onSetCaption={setCaption}
+                    me={user?.name}
+                    thread={thread}
+                    onOpenThread={seen}
+                    onAddComment={addComment}
+                    onDeleteComment={deleteComment}
                 />
             )}
 
@@ -441,7 +479,7 @@ export default function MomentDetail({ slug, onBack, navigate }) {
                                                 borderRadius: '50%', width: 26, height: 26,
                                                 display: 'grid', placeItems: 'center', color: 'var(--paper)',
                                             }}>{cloneElement(Icons.trash, { style: { width: 14, height: 14 } })}</button>
-                                            {p.caption && <PhotoNote />}
+                                            <PhotoChat count={p.comments?.length ?? 0} onClick={() => openThread(p.id)} />
                                         </>
                                     ) : (
                                         i < pinnedCount && (
@@ -462,18 +500,22 @@ export default function MomentDetail({ slug, onBack, navigate }) {
 }
 
 /*
- * Značka, že fotka má svoj popisok. Bez nej by sa o popiskoch nedalo dozvedieť
- * inak než otvorením každej fotky zvlášť.
+ * Bublina rozhovoru na fotke — vedľa srdiečka a rovnako ako ono vždy, aj keď je
+ * vlákno prázdne. Až tak sa dá rozhovor z mriežky začať. Číslo pribudne, keď je
+ * čo počítať.
  */
-const PhotoNote = () => (
-    <div style={{
+const PhotoChat = ({ count, onClick }) => (
+    <button onClick={(e) => { e.stopPropagation(); onClick(); }} style={{
         position: 'absolute', bottom: 5, left: 5,
-        background: 'rgba(20,30,22,0.45)', borderRadius: '50%',
-        width: 20, height: 20, display: 'grid', placeItems: 'center',
-        color: 'var(--paper)',
+        background: count ? 'var(--green)' : 'rgba(20,30,22,0.4)',
+        border: 'none', cursor: 'pointer',
+        borderRadius: 999, height: 22, minWidth: 22, padding: count ? '0 6px' : 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        gap: 3, color: 'var(--paper)',
     }}>
-        {cloneElement(Icons.edit, { style: { width: 11, height: 11 } })}
-    </div>
+        {cloneElement(Icons.chat, { style: { width: 12, height: 12 } })}
+        {count > 0 && <span className="mono" style={{ fontSize: 10 }}>{count}</span>}
+    </button>
 );
 
 /* Srdiečko na fotke — prepnutie pripnutia */

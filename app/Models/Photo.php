@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Facades\Storage;
 
@@ -11,7 +12,7 @@ class Photo extends Model
     protected $fillable = [
         'photoable_type', 'photoable_id', 'kind', 'path', 'thumb_path', 'cover_path', 'cover_thumb_path',
         'duration', 'poster_path', 'poster_thumb_path',
-        'width', 'height', 'caption',
+        'width', 'height',
         'is_pinned', 'is_cover', 'taken_at', 'sort_order',
     ];
 
@@ -37,6 +38,12 @@ class Photo extends Model
         return $this->poster_path
             ? Storage::disk(config('filesystems.media'))->url($this->poster_path)
             : null;
+    }
+
+    /** Rozhovor pod fotkou — v poradí, v akom vznikal. */
+    public function comments(): HasMany
+    {
+        return $this->hasMany(PhotoComment::class)->orderBy('id');
     }
 
     public function photoable(): MorphTo

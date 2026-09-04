@@ -89,24 +89,6 @@ class PhotoController extends Controller
         return response()->json($photo, 201);
     }
 
-    /**
-     * Popisok fotky. Prázdny text ho zmaže — inak by sa nedal vziať späť
-     * bez toho, aby sa fotka zmazala celá.
-     */
-    public function update(Request $request, int $id): JsonResponse
-    {
-        $data = $request->validate([
-            'caption' => 'nullable|string|max:160',
-        ]);
-
-        $photo = Photo::findOrFail($id);
-        $caption = trim($data['caption'] ?? '');
-
-        $photo->update(['caption' => $caption !== '' ? $caption : null]);
-
-        return response()->json($photo);
-    }
-
     public function togglePin(int $id): JsonResponse
     {
         $photo = Photo::findOrFail($id);

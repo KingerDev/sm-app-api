@@ -7,9 +7,14 @@ import Mascot from '../components/Mascot';
 import CoverPicker from '../components/CoverPicker';
 import { PlacePicker } from './MomentForm';
 import { daysUntil, durationSk, formatDateSk, formatDateShortSk, parseDate, today } from '../lib/dates';
+import { dalsieSk, loadSeen, spravySk, unreadTalk } from '../lib/photoTalk';
 
 export default function Home({ navigate }) {
-    const { stats, settings, moments, capsules, events, notes } = useStore();
+    const { stats, settings, moments, capsules, events, notes, user } = useStore();
+
+    // Nové správy pri fotkách — web ani appka nemajú push, takže toto je jediné
+    // miesto, kde sa o nich ten druhý dozvie.
+    const talk = unreadTalk(moments, user?.name, loadSeen());
 
     const m = moments[0]; // najnovší
     const nextCapsule = capsules
@@ -68,6 +73,46 @@ export default function Home({ navigate }) {
 
                 {/* Momentka — rýchle zachytenie chvíľky z bežného dňa */}
                 <QuickNote recent={notes.slice(0, 2)} navigate={navigate} />
+
+                {/* Napísal ti niekto k fotke */}
+                {talk.length > 0 && (
+                    <div style={{ marginBottom: 18 }}>
+                        <div className="row between" style={{ alignItems: 'baseline', marginBottom: 10 }}>
+                            <div className="handwritten" style={{ fontSize: 22 }}>
+                                {talk[0].comment.who} ti napísal{talk[0].comment.who === 'S' ? 'a' : ''}
+                            </div>
+                            <div className="eyebrow" style={{ color: 'var(--green)' }}>
+                                {talk.reduce((n, t) => n + t.count, 0)} {spravySk(talk.reduce((n, t) => n + t.count, 0))}
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'grid', gap: 8 }}>
+                            {talk.slice(0, 3).map(t => (
+                                <button key={t.photoId} className="card" onClick={() => navigate(`moment:${t.momentSlug}?photo=${t.photoId}`)}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: 12, padding: 10,
+                                        textAlign: 'left', cursor: 'pointer', font: 'inherit', color: 'inherit',
+                                    }}>
+                                    <img src={t.thumb} alt="" style={{
+                                        width: 52, height: 52, borderRadius: 12, objectFit: 'cover', flexShrink: 0,
+                                    }} />
+                                    <div className="col grow" style={{ gap: 2, minWidth: 0 }}>
+                                        <div className="mono" style={{ fontSize: 10, color: 'var(--muted)' }}>{t.momentTitle}</div>
+                                        <div style={{ fontSize: 14, lineHeight: 1.4 }}>{t.comment.text}</div>
+                                        {t.count > 1 && (
+                                            <div style={{ fontSize: 11.5, color: 'var(--green)', fontWeight: 500 }}>
+                                                a ešte {t.count - 1} {dalsieSk(t.count - 1)}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <span style={{ color: 'var(--green)', flexShrink: 0 }}>
+                                        {cloneElement(Icons.chat, { style: { width: 17, height: 17 } })}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* Na dnes — najbližšia udalosť */}
                 {nextEvent && (

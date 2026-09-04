@@ -16,14 +16,14 @@ class MomentController extends Controller
     public function index(): JsonResponse
     {
         return response()->json(
-            Moment::with('photos')->orderByDesc('date_start')->get()
+            Moment::with('photos.comments')->orderByDesc('date_start')->get()
         );
     }
 
     public function show(string $slug): JsonResponse
     {
         return response()->json(
-            Moment::with('photos')->where('slug', $slug)->firstOrFail()
+            Moment::with('photos.comments')->where('slug', $slug)->firstOrFail()
         );
     }
 
@@ -53,7 +53,7 @@ class MomentController extends Controller
             Places::ensureCity(Places::ensureCountry($country), $city, $moment->slug);
         }
 
-        return response()->json($moment->load('photos'), 201);
+        return response()->json($moment->load('photos.comments'), 201);
     }
 
     public function update(Request $request, string $slug): JsonResponse
@@ -93,7 +93,7 @@ class MomentController extends Controller
 
         $moment->update($data);
 
-        return response()->json($moment->load('photos'));
+        return response()->json($moment->load('photos.comments'));
     }
 
     public function destroy(string $slug): JsonResponse

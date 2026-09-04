@@ -224,13 +224,13 @@ class ApiTest extends TestCase
         $this->assertSame(3072, $photo->height);
     }
 
-    public function test_photo_caption_is_saved_trimmed_and_can_be_cleared(): void
+    public function test_photo_comments_form_a_thread_with_authors(): void
     {
         \Storage::fake('public');
         $this->actingAs($this->actingUser());
 
         $moment = \App\Models\Moment::create([
-            'slug' => 'popisok-test', 'title' => 'Popisok', 'place' => 'doma',
+            'slug' => 'rozhovor-test', 'title' => 'Rozhovor', 'place' => 'doma',
             'place_short' => 'doma', 'date_start' => '2026-07-05',
             'date_display' => '5. júl 2026', 'date_short' => 'júl 2026', 'seed' => 'home',
         ]);
@@ -242,22 +242,58 @@ class ApiTest extends TestCase
 
         $photo = \App\Models\Photo::first();
 
-        $this->patchJson("/api/v1/photos/{$photo->id}", ['caption' => '  Tu ma naučila plávať  '])
-            ->assertOk()
-            ->assertJsonPath('caption', 'Tu ma naučila plávať');
+        // autor sa berie z prihláseného používateľa, nie z požiadavky
+        $this->postJson("/api/v1/photos/{$photo->id}/comments", ['text' => '  Tu ma naučila plávať  ', 'who' => 'S'])
+            ->assertCreated()
+            ->assertJsonPath('text', 'Tu ma naučila plávať')
+            ->assertJsonPath('who', 'M');
 
-        // popisok chodí aj s momentom, inak ho appka pri fotke nemá odkiaľ vziať
-        $photos = $this->getJson('/api/v1/moments/popisok-test')->json('photos');
-        $this->assertSame('Tu ma naučila plávať', $photos[0]['caption']);
+        $this->actingAs(User::factory()->create(['name' => 'S', 'email' => 's@sm.app']));
+        $this->postJson("/api/v1/photos/{$photo->id}/comments", ['text' => 'A ja som sa bála'])
+            ->assertCreated()
+            ->assertJsonPath('who', 'S');
 
-        // prázdny text popisok zmaže
-        $this->patchJson("/api/v1/photos/{$photo->id}", ['caption' => '  '])
-            ->assertOk()
-            ->assertJsonPath('caption', null);
+        // vlákno chodí s momentom v poradí, v akom vznikalo
+        $photos = $this->getJson('/api/v1/moments/rozhovor-test')->json('photos');
+        $this->assertSame(['M', 'S'], array_column($photos[0]['comments'], 'who'));
+        $this->assertSame('Tu ma naučila plávať', $photos[0]['comments'][0]['text']);
+        $this->assertNotEmpty($photos[0]['comments'][0]['when']);
 
-        // dlhší text ako rozloženie unesie sa neuloží
-        $this->patchJson("/api/v1/photos/{$photo->id}", ['caption' => str_repeat('a', 161)])
+        // priveľa textu na jednu správu sa neuloží
+        $this->postJson("/api/v1/photos/{$photo->id}/comments", ['text' => str_repeat('a', 501)])
             ->assertStatus(422);
+    }
+
+    public function test_only_own_comment_can_be_deleted(): void
+    {
+        \Storage::fake('public');
+        $this->actingAs($this->actingUser());
+
+        $moment = \App\Models\Moment::create([
+            'slug' => 'mazanie-test', 'title' => 'Mazanie', 'place' => 'doma',
+            'place_short' => 'doma', 'date_start' => '2026-07-06',
+            'date_display' => '6. júl 2026', 'date_short' => 'júl 2026', 'seed' => 'home',
+        ]);
+
+        $this->post('/api/v1/photos', [
+            'type' => 'moment', 'id' => $moment->id,
+            'files' => [\Illuminate\Http\Testing\File::image('a.jpg', 800, 600)],
+        ], ['Accept' => 'application/json'])->assertCreated();
+
+        $photo = \App\Models\Photo::first();
+        $mine = $this->postJson("/api/v1/photos/{$photo->id}/comments", ['text' => 'moja'])->json('id');
+
+        $this->actingAs(User::factory()->create(['name' => 'S', 'email' => 's@sm.app']));
+        $this->deleteJson("/api/v1/photo-comments/{$mine}")->assertForbidden();
+
+        $hers = $this->postJson("/api/v1/photos/{$photo->id}/comments", ['text' => 'moja tiež'])->json('id');
+        $this->deleteJson("/api/v1/photo-comments/{$hers}")->assertNoContent();
+
+        $this->assertSame(1, \App\Models\PhotoComment::count());
+
+        // so zmazanou fotkou odíde aj rozhovor pod ňou
+        $this->deleteJson("/api/v1/photos/{$photo->id}")->assertNoContent();
+        $this->assertSame(0, \App\Models\PhotoComment::count());
     }
 
     public function test_photo_upload_with_full_flag_keeps_the_original(): void

@@ -3,34 +3,40 @@ import { cloneElement, useCallback, useEffect, useRef, useState } from 'react';
 import { Icons } from './shell';
 
 /**
- * Koľko sa zmestí do popisku fotky. Nie je to šetrenie miestom — popisok sa
- * kreslí do koláží, ktoré majú na text pevné okienko, tak sa dĺžka stráži na
- * vstupe. Rovnaké číslo má server vo validácii aj natívna appka.
+ * Koľko sa zmestí do jednej správy. Rovnaké číslo má server vo validácii aj
+ * natívna appka.
  */
-export const CAPTION_MAX = 160;
+export const COMMENT_MAX = 500;
 
-export default function Lightbox({ items, index, onClose, onTogglePin, onDelete, onSetCover, onSetCaption }) {
+/** Farba mena autora — vlastné správy sú zelené celé a meno pri nich netreba. */
+const whoColor = (who) => (who === 'S' ? '#e8b4c8' : who === 'M' ? '#9fd6a8' : '#d8d2c2');
+
+export default function Lightbox({
+    items, index, onClose, onTogglePin, onDelete, onSetCover,
+    me, onAddComment, onDeleteComment, thread: threadAtStart, onOpenThread,
+}) {
     const [i, setI] = useState(index ?? 0);
-    const [draft, setDraft] = useState(null);
-    const [saving, setSaving] = useState(false);
+    const [thread, setThread] = useState(!!threadAtStart);
+    const [draft, setDraft] = useState('');
+    const [sending, setSending] = useState(false);
     const [failed, setFailed] = useState(false);
     const touchX = useRef(null);
-    const editing = draft !== null;
+    const threadRef = useRef(null);
 
     const prev = useCallback(() => setI(v => (v - 1 + items.length) % items.length), [items.length]);
     const next = useCallback(() => setI(v => (v + 1) % items.length), [items.length]);
 
     useEffect(() => {
         const onKey = (e) => {
-            // Počas písania popisku patria šípky aj Escape textovému poľu
-            if (editing) return;
+            // Počas rozhovoru patria šípky aj Escape textovému poľu
+            if (thread) return;
             if (e.key === 'Escape') onClose();
             if (e.key === 'ArrowLeft') prev();
             if (e.key === 'ArrowRight') next();
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-    }, [onClose, prev, next, editing]);
+    }, [onClose, prev, next, thread]);
 
     // Keď sa zmaže posledná fotka, zavri; inak drž index v rozsahu
     useEffect(() => {
@@ -41,18 +47,30 @@ export default function Lightbox({ items, index, onClose, onTogglePin, onDelete,
     const photo = items[Math.min(i, items.length - 1)];
     if (!photo) return null;
 
-    const saveCaption = async () => {
-        if (draft === null || !onSetCaption) return;
-        setSaving(true);
+    const comments = photo.comments ?? [];
+    const last = comments[comments.length - 1];
+
+    // Text sa po zlyhaní nesmie stratiť — panel ostáva otvorený aj s ním.
+    const send = async () => {
+        const text = draft.trim();
+        if (!text || !onAddComment) return;
+        setSending(true);
         setFailed(false);
         try {
-            await onSetCaption(photo, draft.trim());
-            setDraft(null);
+            await onAddComment(photo, text);
+            setDraft('');
+            setTimeout(() => threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight }), 60);
         } catch {
             setFailed(true);
         } finally {
-            setSaving(false);
+            setSending(false);
         }
+    };
+
+    const removeComment = (c) => {
+        if (!onDeleteComment || c.who !== me) return;
+        if (!confirm(`Vymazať správu „${c.text}"?`)) return;
+        onDeleteComment(photo, c.id);
     };
 
     const navBtn = (side, onClick, icon) => (
@@ -75,7 +93,7 @@ export default function Lightbox({ items, index, onClose, onTogglePin, onDelete,
             }}
             onTouchStart={(e) => { touchX.current = e.touches[0].clientX; }}
             onTouchEnd={(e) => {
-                if (touchX.current === null || editing) return;
+                if (touchX.current === null || thread) return;
                 const dx = e.changedTouches[0].clientX - touchX.current;
                 touchX.current = null;
                 if (Math.abs(dx) > 40) (dx > 0 ? prev() : next());
@@ -90,11 +108,14 @@ export default function Lightbox({ items, index, onClose, onTogglePin, onDelete,
                     {i + 1} / {items.length}
                 </span>
                 <div className="row gap-8">
-                    {photo.real && onSetCaption && !photo.isVideo && (
-                        <button className="icon-btn" style={{ ...lbBtn, ...(photo.caption ? { background: 'var(--green)' } : null) }}
-                            title={photo.caption ? 'upraviť popisok' : 'pridať popisok'}
-                            onClick={() => { setFailed(false); setDraft(photo.caption ?? ''); }}>
-                            {cloneElement(Icons.edit, { style: { width: 17, height: 17 } })}
+                    {photo.real && onAddComment && (
+                        <button className="icon-btn" style={{ ...lbBtn, ...(comments.length ? { background: 'var(--green)' } : null) }}
+                            title={comments.length ? `rozhovor (${comments.length})` : 'napísať k fotke'}
+                            onClick={() => { setFailed(false); setThread(true); onOpenThread?.(photo); }}>
+                            {cloneElement(Icons.chat, { style: { width: 17, height: 17 } })}
+                            {comments.length > 0 && (
+                                <span className="mono" style={{ fontSize: 10, marginLeft: 3 }}>{comments.length}</span>
+                            )}
                         </button>
                     )}
                     {photo.real && onSetCover && (
@@ -144,65 +165,99 @@ export default function Lightbox({ items, index, onClose, onTogglePin, onDelete,
                 {items.length > 1 && navBtn('right', next, Icons.arrow)}
             </div>
 
-            {/* Popisok fotky */}
-            {!editing && photo.caption && (
-                <div style={{
-                    padding: '0 24px 4px', textAlign: 'center',
-                    fontSize: 14, lineHeight: 1.5, color: 'var(--paper)',
-                }}>{photo.caption}</div>
+            {/* Posledná správa */}
+            {!thread && last && (
+                <button onClick={() => { setThread(true); onOpenThread?.(photo); }} style={{
+                    padding: '0 24px 6px', textAlign: 'center', border: 'none', cursor: 'pointer',
+                    background: 'none', font: 'inherit', fontSize: 14, lineHeight: 1.5, color: 'var(--paper)',
+                }}>
+                    <span style={{ fontWeight: 600, color: whoColor(last.who) }}>{last.who}: </span>
+                    {last.text}
+                    {comments.length > 1 && (
+                        <span className="mono" style={{ display: 'block', marginTop: 4, fontSize: 11, color: 'rgba(255,255,255,0.55)' }}>
+                            celý rozhovor ({comments.length})
+                        </span>
+                    )}
+                </button>
             )}
 
-            {/* Písanie popisku */}
-            {editing && (
+            {/* Rozhovor */}
+            {thread && (
                 <div style={{
-                    padding: '12px 18px 18px', display: 'grid', gap: 8,
+                    padding: '12px 18px 18px', display: 'grid', gap: 10,
                     borderTop: '0.5px solid rgba(250,250,247,0.16)',
                     background: 'rgba(12,16,13,0.97)',
                 }}>
                     <div className="row" style={{ justifyContent: 'space-between' }}>
-                        <span className="mono" style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>POPISOK FOTKY</span>
-                        <span className="mono" style={{
-                            fontSize: 11,
-                            color: draft.length > CAPTION_MAX - 20 ? 'var(--accent)' : 'rgba(255,255,255,0.4)',
-                        }}>{draft.length} / {CAPTION_MAX}</span>
+                        <span className="mono" style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)' }}>
+                            {comments.length ? `ROZHOVOR · ${comments.length}` : 'ROZHOVOR'}
+                        </span>
+                        <button className="icon-btn" style={lbBtn} onClick={() => setThread(false)}>{Icons.close}</button>
                     </div>
 
-                    <textarea
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                        maxLength={CAPTION_MAX}
-                        rows={2}
-                        autoFocus
-                        placeholder="čo sa tu stalo?"
-                        style={{
-                            font: 'inherit', fontSize: 15, lineHeight: 1.4, resize: 'none',
-                            color: 'var(--paper)', background: 'rgba(250,250,247,0.08)',
-                            border: '0.5px solid rgba(250,250,247,0.18)', borderRadius: 12,
-                            padding: '10px 12px',
-                        }}
-                    />
+                    {comments.length ? (
+                        <div ref={threadRef} style={{ display: 'grid', gap: 8, maxHeight: '28vh', overflowY: 'auto' }}>
+                            {comments.map((c) => {
+                                const mine = c.who === me;
 
-                    {failed && (
-                        <div style={{ fontSize: 12.5, color: 'var(--accent)' }}>Popisok sa nepodarilo uložiť.</div>
+                                return (
+                                    <div key={c.id} onDoubleClick={() => removeComment(c)} style={{
+                                        justifySelf: mine ? 'end' : 'start', maxWidth: '86%',
+                                        background: mine ? 'var(--green)' : 'rgba(250,250,247,0.10)',
+                                        borderRadius: 16,
+                                        borderBottomRightRadius: mine ? 4 : 16,
+                                        borderBottomLeftRadius: mine ? 16 : 4,
+                                        padding: '9px 13px', display: 'grid', gap: 3,
+                                        cursor: mine ? 'pointer' : 'default',
+                                    }} title={mine ? 'dvojklik správu vymaže' : undefined}>
+                                        {!mine && (
+                                            <span style={{ fontWeight: 600, fontSize: 11.5, color: whoColor(c.who) }}>{c.who}</span>
+                                        )}
+                                        <span style={{ fontSize: 14.5, lineHeight: 1.4, color: 'var(--paper)' }}>{c.text}</span>
+                                        {c.when && (
+                                            <span className="mono" style={{ fontSize: 10, color: 'rgba(250,250,247,0.5)' }}>{c.when}</span>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div style={{ fontSize: 13, color: 'rgba(250,250,247,0.5)' }}>Zatiaľ tu nikto nič nenapísal.</div>
                     )}
 
-                    <div className="row gap-8">
-                        <button onClick={() => setDraft(null)} style={{
-                            flex: 1, padding: '10px 0', borderRadius: 999, cursor: 'pointer',
-                            font: 'inherit', fontSize: 14, color: 'var(--paper)',
-                            background: 'transparent', border: '0.5px solid rgba(250,250,247,0.22)',
-                        }}>zrušiť</button>
-                        <button onClick={saveCaption} disabled={saving} style={{
-                            flex: 1, padding: '10px 0', borderRadius: 999, cursor: 'pointer',
-                            font: 'inherit', fontSize: 14, color: 'var(--paper)',
-                            background: 'var(--green)', border: 'none', opacity: saving ? 0.6 : 1,
-                        }}>{saving ? 'ukladám…' : 'uložiť'}</button>
+                    {failed && <div style={{ fontSize: 12.5, color: 'var(--accent)' }}>Správu sa nepodarilo odoslať.</div>}
+
+                    <div className="row gap-8" style={{ alignItems: 'flex-end' }}>
+                        <textarea
+                            value={draft}
+                            onChange={(e) => setDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                                // Enter odošle, Shift+Enter je nový riadok — ako v chate
+                                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+                            }}
+                            maxLength={COMMENT_MAX}
+                            rows={1}
+                            autoFocus={!comments.length}
+                            placeholder="napíš niečo k tejto fotke…"
+                            style={{
+                                flex: 1, font: 'inherit', fontSize: 15, lineHeight: 1.4, resize: 'none',
+                                color: 'var(--paper)', background: 'rgba(250,250,247,0.08)',
+                                border: '0.5px solid rgba(250,250,247,0.18)', borderRadius: 20,
+                                padding: '10px 14px', minHeight: 42, maxHeight: 110,
+                            }}
+                        />
+                        <button onClick={send} disabled={sending || !draft.trim()} style={{
+                            width: 42, height: 42, borderRadius: '50%', border: 'none',
+                            background: 'var(--green)', color: 'var(--paper)', cursor: 'pointer',
+                            display: 'grid', placeItems: 'center',
+                            opacity: sending || !draft.trim() ? 0.45 : 1,
+                        }}>{cloneElement(Icons.send, { style: { width: 18, height: 18 } })}</button>
                     </div>
                 </div>
             )}
 
             {/* Bodky */}
-            {!editing && items.length > 1 && items.length <= 12 && (
+            {!thread && items.length > 1 && items.length <= 12 && (
                 <div className="row" style={{ justifyContent: 'center', gap: 6, padding: '12px 0 18px' }}>
                     {items.map((p, j) => (
                         <button key={p.id} onClick={() => setI(j)} style={{

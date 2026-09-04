@@ -26,6 +26,7 @@ export const Icons = {
     close: ico(<path d="M6 6l12 12M18 6L6 18" />),
     check: ico(<path d="M5 13l4 4L19 7" />),
     edit: ico(<><path d="M4 20h4L18.5 9.5a2 2 0 0 0-2.8-2.8L5 17.5z" /><path d="M13.5 6.5l4 4" /></>),
+    chat: ico(<path d="M20 14.5a2 2 0 0 1-2 2H8l-4 3.5v-14a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z" />),
     trash: ico(<><path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M6 7l1 13a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1l1-13" /></>),
     share: ico(<><circle cx="18" cy="5" r="2.5" /><circle cx="6" cy="12" r="2.5" /><circle cx="18" cy="19" r="2.5" /><path d="M8.2 10.8l7.6-4.6M8.2 13.2l7.6 4.6" /></>),
     download: ico(<><path d="M12 4v11M7 11l5 5 5-5" /><path d="M5 20h14" /></>),
