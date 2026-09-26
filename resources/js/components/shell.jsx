@@ -44,7 +44,7 @@ export const TabBar = ({ active, onChange }) => {
         { id: 'bucket', icon: Icons.bucket, label: 'Bucket' },
         { id: 'gallery', icon: Icons.img, label: 'Galéria' },
         { id: 'map', icon: Icons.map, label: 'Mapa' },
-        { id: 'stats', icon: Icons.chart, label: 'Štats' },
+        { id: 'stats', icon: Icons.chart, label: 'Prehľad' },
     ];
     return (
         <div className="tabbar">

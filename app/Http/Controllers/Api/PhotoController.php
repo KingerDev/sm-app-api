@@ -107,8 +107,9 @@ class PhotoController extends Controller
     public function setCover(Request $request, int $id): JsonResponse
     {
         $request->validate([
-            'file' => 'nullable|file|image|max:40960',
-            'full' => 'nullable|boolean',
+            'file'  => 'nullable|file|image|max:40960',
+            'full'  => 'nullable|boolean',
+            'focus' => 'nullable|numeric|between:0,1',
         ]);
 
         $photo = Photo::findOrFail($id);
@@ -121,10 +122,11 @@ class PhotoController extends Controller
             ->get()
             ->each(function (Photo $other) {
                 Images::delete($other->cover_path, $other->cover_thumb_path);
-                $other->update(['is_cover' => false, 'cover_path' => null, 'cover_thumb_path' => null]);
+                $other->update(['is_cover' => false, 'cover_path' => null, 'cover_thumb_path' => null, 'cover_focus' => null]);
             });
 
-        $data = ['is_cover' => true];
+        // Poloha pásu, ktorý z titulky ukážu karty. Bez nej (web, staršia appka) stred.
+        $data = ['is_cover' => true, 'cover_focus' => $request->filled('focus') ? (float) $request->input('focus') : null];
 
         if ($file = $request->file('file')) {
             Images::delete($photo->cover_path, $photo->cover_thumb_path);

@@ -352,6 +352,11 @@ class ApiTest extends TestCase
         $this->assertSame($second->id, $photos[0]['id']);
         $this->assertTrue($photos[0]['is_cover']);
 
+        // poloha pásu pre karty sa uloží k titulke
+        $this->patchJson("/api/v1/photos/{$second->id}/cover", ['focus' => 0.2])->assertOk();
+        $this->assertSame(0.2, $this->getJson('/api/v1/moments/cover-test')->json('photos.0.cover_focus'));
+        $this->patchJson("/api/v1/photos/{$second->id}/cover", ['focus' => 1.5])->assertUnprocessable();
+
         // prepnutie na prvú zruší cover druhej
         $this->patchJson("/api/v1/photos/{$first->id}/cover")->assertOk();
         $photos = $this->getJson('/api/v1/moments/cover-test')->json('photos');

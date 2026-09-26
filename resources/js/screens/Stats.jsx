@@ -18,7 +18,7 @@ export default function Stats({ navigate }) {
         <>
             <AppHeader
                 eyebrow="náš vzťah v číslach"
-                title="štatistiky"
+                title="prehľad"
                 right={<button className={'icon-btn' + (menu ? ' green' : '')} onClick={() => setMenu(true)}>{Icons.more}</button>}
             />
             <div className="scroll">
