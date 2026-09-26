@@ -4,6 +4,7 @@ namespace App\Support;
 
 use App\Models\Country;
 use App\Models\Moment;
+use Illuminate\Support\Str;
 
 /**
  * Správa krajín a miest (mestá žijú ako JSON pole na krajine)
@@ -11,6 +12,38 @@ use App\Models\Moment;
  */
 class Places
 {
+    /**
+     * Zhrnutie viacerých miest momentu do `place` a `place_short`, ktoré čítajú
+     * všetky obrazovky. Jedno miesto ostane tak, ako prišlo.
+     *
+     * @param  array<int, array{label: string, short?: ?string, city?: ?string, country?: ?string}>  $places
+     * @return array{place: string, place_short: string}
+     */
+    public static function summarize(array $places): array
+    {
+        if (count($places) === 1) {
+            $p = $places[0];
+
+            return ['place' => $p['label'], 'place_short' => filled($p['short'] ?? null) ? $p['short'] : $p['label']];
+        }
+
+        $shorts = array_map(fn ($p) => filled($p['short'] ?? null) ? $p['short'] : $p['label'], $places);
+        $countries = array_unique(array_filter(array_map(fn ($p) => $p['country'] ?? null, $places)));
+
+        // Karty sú úzke — ukážeme prvé dve a zvyšok ako počet.
+        $short = count($shorts) > 2
+            ? $shorts[0].', '.$shorts[1].' +'.(count($shorts) - 2)
+            : implode(', ', $shorts);
+
+        // Spoločnú krajinu stačí napísať raz: „Viedeň, Salzburg · Rakúsko".
+        $place = implode(', ', $shorts);
+        if (count($countries) === 1 && count(array_filter($places, fn ($p) => filled($p['country'] ?? null))) === count($places)) {
+            $place .= ' · '.reset($countries);
+        }
+
+        return ['place' => Str::limit($place, 250, '…'), 'place_short' => $short];
+    }
+
     /** Nájde krajinu podľa mena (case-insensitive). */
     public static function findCountry(string $name): ?Country
     {

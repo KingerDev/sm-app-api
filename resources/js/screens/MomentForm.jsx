@@ -5,12 +5,16 @@ import { useStore } from '../store';
 import { Icons, Photo, Sheet, coverSrc } from '../components/shell';
 import PhotoEditor from '../components/PhotoEditor';
 import { toInputDate } from '../lib/dates';
+import { momentPlaces } from '../lib/places';
 
 const mInputBase = {
     width: '100%', font: 'inherit', fontSize: 15, color: 'var(--ink)',
     background: 'var(--surface)', border: '0.5px solid var(--line)',
     borderRadius: 12, padding: '13px 14px', outline: 'none',
 };
+
+// Rovnaký strop drží server.
+const MAX_PLACES = 10;
 
 const fotkaWord = (n) => n === 1 ? 'fotka' : n < 5 ? 'fotky' : 'fotiek';
 
@@ -22,17 +26,9 @@ export function MomentForm({ slug, onBack, navigate }) {
 
     const defaultWho = user?.name === 'S' || user?.name === 'M' ? user.name : 'spolu';
 
-    // "Viedeň · Rakúsko" → mesto + krajina (pre prepojenie s mapou)
-    const parsePlace = (label) => {
-        const parts = (label || '').split(' · ').map(s => s.trim());
-        return parts.length === 2 ? { city: parts[0], country: parts[1] } : { city: '', country: '' };
-    };
-
     const [title, setTitle] = useState(edit ? moment.title : '');
-    const [place, setPlace] = useState(edit ? moment.place : '');
-    const [placeShort, setPlaceShort] = useState(edit ? (moment.place_short || '') : '');
-    const [placeCity, setPlaceCity] = useState(edit ? parsePlace(moment.place).city : '');
-    const [placeCountry, setPlaceCountry] = useState(edit ? parsePlace(moment.place).country : '');
+    // Dovolenka býva cez viac miest — každé sa na mape naviaže zvlášť.
+    const [places, setPlaces] = useState(edit ? momentPlaces(moment) : []);
     const [dateStart, setDateStart] = useState(edit ? toInputDate(moment.date_start) : '');
     const [dateEnd, setDateEnd] = useState(edit && moment.date_end ? toInputDate(moment.date_end) : '');
     const [multiDay, setMultiDay] = useState(edit && !!moment.date_end);
@@ -57,7 +53,7 @@ export function MomentForm({ slug, onBack, navigate }) {
         setFiles(files.filter((_, j) => j !== i));
     };
 
-    const canSave = title.trim().length > 0 && place.trim().length > 0 && !!dateStart && !busy;
+    const canSave = title.trim().length > 0 && places.length > 0 && !!dateStart && !busy;
 
     const save = async () => {
         if (!canSave) return;
@@ -66,18 +62,15 @@ export function MomentForm({ slug, onBack, navigate }) {
         try {
             const payload = {
                 title: title.trim(),
-                place: place.trim(),
+                // Zhrnutie do place/place_short a prepojenie s mapou si urobí server.
+                places: places.map(p => ({
+                    label: p.label, short: p.short || null, city: p.city || null, country: p.country || null,
+                })),
                 date_start: dateStart,
                 date_end: multiDay && dateEnd ? dateEnd : null,
                 who,
                 description: note.trim() || null,
             };
-            if (placeShort.trim()) payload.place_short = placeShort.trim();
-            // Prepojenie na mapu — založí krajinu/mesto ak treba
-            if (placeCity.trim() && placeCountry.trim()) {
-                payload.city = placeCity.trim();
-                payload.country = placeCountry.trim();
-            }
 
             const saved = edit
                 ? await api.patch(`/moments/${slug}`, payload)
@@ -218,17 +211,40 @@ export function MomentForm({ slug, onBack, navigate }) {
                             style={{ ...mInputBase, paddingLeft: 42, marginBottom: 10, WebkitAppearance: 'none', appearance: 'none' }} />
                     </div>
                 )}
-                <button onClick={() => setPlaceSheet(true)} style={{
-                    ...mInputBase, paddingLeft: 42, marginBottom: 18, position: 'relative',
-                    display: 'flex', alignItems: 'center', textAlign: 'left', cursor: 'pointer',
-                    color: place ? 'var(--ink)' : 'var(--muted-2)',
-                }}>
-                    <span style={fieldIcon}>{cloneElement(Icons.pin, { style: { width: 18, height: 18 } })}</span>
-                    <span className="grow">{place || 'vyber miesto'}</span>
-                    <span style={{ color: 'var(--muted-2)' }}>
-                        {cloneElement(Icons.arrow, { style: { width: 16, height: 16 } })}
-                    </span>
-                </button>
+                <div style={{ display: 'grid', gap: 8, marginBottom: 18 }}>
+                    {places.map((p, i) => (
+                        <div key={p.label + i} style={{
+                            ...mInputBase, paddingLeft: 42, position: 'relative',
+                            display: 'flex', alignItems: 'center',
+                        }}>
+                            <span style={{ ...fieldIcon, color: 'var(--green)' }}>
+                                {cloneElement(Icons.pin, { style: { width: 18, height: 18 } })}
+                            </span>
+                            <span className="grow" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {p.label}
+                            </span>
+                            <button onClick={() => setPlaces(places.filter((_, j) => j !== i))} aria-label="odobrať miesto"
+                                style={{ background: 'none', border: 0, padding: 0, cursor: 'pointer', color: 'var(--muted-2)', display: 'grid' }}>
+                                {cloneElement(Icons.close, { style: { width: 16, height: 16 } })}
+                            </button>
+                        </div>
+                    ))}
+                    {places.length < MAX_PLACES && (
+                        <button onClick={() => setPlaceSheet(true)} style={{
+                            ...mInputBase, paddingLeft: 42, position: 'relative',
+                            display: 'flex', alignItems: 'center', textAlign: 'left', cursor: 'pointer',
+                            color: 'var(--muted-2)',
+                        }}>
+                            <span style={fieldIcon}>
+                                {cloneElement(places.length ? Icons.plus : Icons.pin, { style: { width: 18, height: 18 } })}
+                            </span>
+                            <span className="grow">{places.length ? 'pridať ďalšie miesto' : 'vyber miesto'}</span>
+                            <span style={{ color: 'var(--muted-2)' }}>
+                                {cloneElement(Icons.arrow, { style: { width: 16, height: 16 } })}
+                            </span>
+                        </button>
+                    )}
+                </div>
 
                 {/* Kto pridal */}
                 <div className="eyebrow" style={{ marginBottom: 10 }}>kto pridal</div>
@@ -312,15 +328,14 @@ export function MomentForm({ slug, onBack, navigate }) {
 
             {placeSheet && (
                 <PlacePicker
-                    current={place}
                     countries={countries}
                     moments={moments}
                     onClose={() => setPlaceSheet(false)}
                     onPick={(p) => {
-                        setPlace(p.label);
-                        setPlaceShort(p.short);
-                        setPlaceCity(p.city || '');
-                        setPlaceCountry(p.country || '');
+                        // To isté miesto dvakrát nepridáme.
+                        if (!places.some(x => x.label === p.label)) {
+                            setPlaces([...places, { label: p.label, short: p.short, city: p.city, country: p.country }]);
+                        }
                         setPlaceSheet(false);
                     }}
                 />
@@ -346,17 +361,13 @@ export const PlacePicker = ({ current, countries, moments, onClose, onPick }) =>
             known.push({ label, flag: c.flag, short: ci.name, city: ci.name, country: c.name });
         }
     }));
-    moments.forEach(m => {
-        if (m.place && !seen.has(m.place)) {
-            seen.add(m.place);
-            const parts = m.place.split(' · ').map(s => s.trim());
-            known.push({
-                label: m.place, flag: '📍', short: m.place_short || m.place,
-                city: parts.length === 2 ? parts[0] : '',
-                country: parts.length === 2 ? parts[1] : '',
-            });
-        }
-    });
+    // Po jednotlivých miestach — zhrnutie viacerých („Viedeň, Salzburg") by ako
+    // návrh nedávalo zmysel.
+    moments.forEach(m => momentPlaces(m).forEach(p => {
+        if (seen.has(p.label)) return;
+        seen.add(p.label);
+        known.push({ label: p.label, flag: '📍', short: p.short, city: p.city || '', country: p.country || '' });
+    }));
 
     const query = q.trim().toLowerCase();
     const filtered = known.filter(k => !query || k.label.toLowerCase().includes(query));

@@ -26,7 +26,12 @@ class WrappedBuilder
         9 => 'autumn', 10 => 'autumn', 11 => 'autumn',
     ];
 
-    /** Všetky mesiace, v ktorých sa niečo udialo — od najnovšieho. */
+    /**
+     * Všetky uzavreté mesiace, v ktorých sa niečo udialo — od najnovšieho.
+     *
+     * Prebiehajúci mesiac chýba zámerne: september sa otvorí až 1. októbra,
+     * inak by Wrapped ukazoval polovičný mesiac a menil sa každý deň.
+     */
     public static function all(): Collection
     {
         $moments = Moment::orderBy('date_start')->get([
@@ -55,6 +60,7 @@ class WrappedBuilder
             ->concat($notesByMonth->keys())
             ->concat($bucketByMonth->keys())
             ->unique()
+            ->filter(fn (string $key) => $key < now()->format('Y-m'))
             ->sortDesc()
             ->values();
 
@@ -63,7 +69,7 @@ class WrappedBuilder
         }
 
         // Mesiac s najviac fotkami dostane hviezdičku (klienti ho čítajú ako is_top).
-        $topKey = $photosByMonth->map->sum()->sortDesc()->keys()->first();
+        $topKey = $photosByMonth->only($keys)->map->sum()->sortDesc()->keys()->first();
 
         return $keys->values()->map(fn (string $key, int $i) => self::build(
             $key,

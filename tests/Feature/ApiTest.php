@@ -403,6 +403,56 @@ class ApiTest extends TestCase
         $this->assertContains('plan', $kinds);
     }
 
+    public function test_moment_can_have_several_places_linked_on_the_map(): void
+    {
+        // Geokóder nech nechodí von — súradnice krajiny tu nehrajú rolu.
+        \Illuminate\Support\Facades\Http::fake(['*' => \Illuminate\Support\Facades\Http::response([], 200)]);
+        $this->actingAs($this->actingUser());
+
+        $res = $this->postJson('/api/v1/moments', [
+            'title'      => 'Rakúsko na týždeň',
+            'date_start' => '2026-07-01',
+            'places'     => [
+                ['label' => 'Viedeň · Rakúsko', 'short' => 'Viedeň', 'city' => 'Viedeň', 'country' => 'Rakúsko'],
+                ['label' => 'Salzburg · Rakúsko', 'short' => 'Salzburg', 'city' => 'Salzburg', 'country' => 'Rakúsko'],
+                ['label' => 'Hallstatt · Rakúsko', 'short' => 'Hallstatt', 'city' => 'Hallstatt', 'country' => 'Rakúsko'],
+            ],
+        ])->assertCreated();
+
+        $slug = $res->json('slug');
+        $this->assertCount(3, $res->json('places'));
+        $this->assertSame('Viedeň, Salzburg, Hallstatt · Rakúsko', $res->json('place'));
+        $this->assertSame('Viedeň, Salzburg +1', $res->json('place_short'));
+
+        $cities = collect(\App\Models\Country::where('name', 'Rakúsko')->first()->cities);
+        $this->assertSame(['Viedeň', 'Salzburg', 'Hallstatt'], $cities->pluck('name')->all());
+        $this->assertTrue($cities->every(fn ($c) => in_array($slug, $c['momentIds'], true)));
+
+        // Úprava na jedno miesto odpojí moment od ostatných miest
+        $res = $this->patchJson("/api/v1/moments/{$slug}", [
+            'places' => [['label' => 'Praha · Česko', 'short' => 'Praha', 'city' => 'Praha', 'country' => 'Česko']],
+        ])->assertOk();
+
+        $this->assertSame('Praha · Česko', $res->json('place'));
+        $this->assertSame('Praha', $res->json('place_short'));
+        $austria = collect(\App\Models\Country::where('name', 'Rakúsko')->first()->cities);
+        $this->assertTrue($austria->every(fn ($c) => ! in_array($slug, $c['momentIds'], true)));
+
+        // Staršia appka posiela jedno miesto po starom — zoznam miest sa zahodí
+        $res = $this->patchJson("/api/v1/moments/{$slug}", ['place' => 'Brno · Česko', 'city' => 'Brno', 'country' => 'Česko'])
+            ->assertOk();
+        $this->assertNull($res->json('places'));
+        $this->assertSame('Brno · Česko', $res->json('place'));
+    }
+
+    public function test_moment_needs_a_place_or_places(): void
+    {
+        $this->actingAs($this->actingUser());
+        $this->postJson('/api/v1/moments', ['title' => 'Bez miesta', 'date_start' => '2026-07-01'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('place');
+    }
+
     public function test_monthly_collage_is_generated_from_moment_photos(): void
     {
         \Storage::fake('public');
@@ -436,6 +486,28 @@ class ApiTest extends TestCase
         $this->assertCount(1, $files);
         [$w, $h] = getimagesizefromstring(\Storage::disk('public')->get($files[0]));
         $this->assertSame([1080, 1920], [$w, $h]);
+    }
+
+    public function test_monthly_wrapped_opens_only_after_the_month_ends(): void
+    {
+        $this->actingAs($this->actingUser());
+        $this->travelTo('2026-09-26 12:00');
+
+        foreach (['2026-08-10' => 'august', '2026-09-05' => 'september'] as $date => $slug) {
+            \App\Models\Moment::create([
+                'slug' => $slug, 'title' => ucfirst($slug), 'place' => 'Praha', 'place_short' => 'Praha',
+                'date_start' => $date, 'date_display' => $date, 'date_short' => $date, 'seed' => 'default',
+            ]);
+        }
+
+        $ids = collect($this->getJson('/api/v1/wrapped')->assertOk()->json())->pluck('wrapped_id');
+        $this->assertSame(['2026-08'], $ids->all());
+        $this->getJson('/api/v1/wrapped/2026-09')->assertNotFound();
+
+        // 1. októbra sa september otvorí
+        $this->travelTo('2026-10-01 00:05');
+        $ids = collect($this->getJson('/api/v1/wrapped')->json())->pluck('wrapped_id');
+        $this->assertSame(['2026-09', '2026-08'], $ids->all());
     }
 
     public function test_collage_for_unknown_month_is_not_found(): void

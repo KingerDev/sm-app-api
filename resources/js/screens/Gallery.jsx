@@ -3,6 +3,7 @@ import { cloneElement, useState } from 'react';
 import { useStore } from '../store';
 import { AppHeader, Icons, Photo, coverSrc } from '../components/shell';
 import { MONTHS_SHORT_SK, daysBetween, formatDateSk, parseDate, today } from '../lib/dates';
+import { momentPlaces } from '../lib/places';
 
 const momentWord = (n) => n === 1 ? 'moment' : n < 5 ? 'momenty' : 'momentov';
 const noteWord = (n) => n === 1 ? 'chvíľka' : n < 5 ? 'chvíľky' : 'chvíľok';
@@ -32,10 +33,10 @@ export default function Gallery({ navigate }) {
 
     // Po mieste — momenty aj chvíľky s miestom
     const placeMap = {};
-    moments.forEach(m => {
-        const k = m.place_short;
-        (placeMap[k] = placeMap[k] || { place: m.place, moms: [], notes: [] }).moms.push(m);
-    });
+    // Moment cez viac miest patrí pod každé z nich.
+    moments.forEach(m => momentPlaces(m).forEach(p => {
+        (placeMap[p.short] = placeMap[p.short] || { place: p.label, moms: [], notes: [] }).moms.push(m);
+    }));
     notes.filter(n => n.place).forEach(n => {
         const k = n.place_short || n.place;
         (placeMap[k] = placeMap[k] || { place: n.place, moms: [], notes: [] }).notes.push(n);

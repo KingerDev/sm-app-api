@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 class Moment extends Model
 {
     protected $fillable = [
-        'slug', 'title', 'place', 'place_short',
+        'slug', 'title', 'place', 'place_short', 'places',
         'date_start', 'date_end', 'date_display', 'date_short',
         'photos_count', 'pinned_count', 'who', 'seed', 'description', 'sort_order',
     ];
@@ -17,6 +17,7 @@ class Moment extends Model
         'is_done'  => 'boolean',
         'date_start' => 'date',
         'date_end'   => 'date',
+        'places'     => 'array',
     ];
 
     public function photos(): MorphMany

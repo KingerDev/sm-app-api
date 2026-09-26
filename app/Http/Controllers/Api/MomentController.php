@@ -13,6 +13,14 @@ use Illuminate\Support\Str;
 
 class MomentController extends Controller
 {
+    private const PLACES_RULES = [
+        'places'           => 'nullable|array|min:1|max:10',
+        'places.*.label'   => 'required|string|max:120',
+        'places.*.short'   => 'nullable|string|max:60',
+        'places.*.city'    => 'nullable|string|max:80',
+        'places.*.country' => 'nullable|string|max:80',
+    ];
+
     public function index(): JsonResponse
     {
         return response()->json(
@@ -31,7 +39,7 @@ class MomentController extends Controller
     {
         $data = $request->validate([
             'title'        => 'required|string|max:120',
-            'place'        => 'required|string|max:120',
+            'place'        => 'required_without:places|string|max:120',
             'place_short'  => 'nullable|string|max:60',
             'date_start'   => 'required|date',
             'date_end'     => 'nullable|date|after_or_equal:date_start',
@@ -40,16 +48,15 @@ class MomentController extends Controller
             'description'  => 'nullable|string|max:2000',
             'country'      => 'nullable|string|max:80',
             'city'         => 'nullable|string|max:80',
+            ...self::PLACES_RULES,
         ]);
 
-        $country = $data['country'] ?? null;
-        $city = $data['city'] ?? null;
-        unset($data['country'], $data['city']);
+        $links = $this->takePlaces($data);
 
         $moment = Moment::create($this->prepare($data));
 
         // Prepojenie na mapu: založí krajinu/mesto ak treba a naviaže moment
-        if (filled($country) && filled($city)) {
+        foreach ($links as [$country, $city]) {
             Places::ensureCity(Places::ensureCountry($country), $city, $moment->slug);
         }
 
@@ -71,15 +78,18 @@ class MomentController extends Controller
             'description'  => 'nullable|string|max:2000',
             'country'      => 'nullable|string|max:80',
             'city'         => 'nullable|string|max:80',
+            ...self::PLACES_RULES,
         ]);
 
-        $country = $data['country'] ?? null;
-        $city = $data['city'] ?? null;
-        unset($data['country'], $data['city']);
+        $placesSent = array_key_exists('places', $data) || filled($data['city'] ?? null);
+        $links = $this->takePlaces($data);
 
-        if (filled($country) && filled($city)) {
+        // Pri zmene miest sa moment odpojí zo všetkých starých a naviaže na nové.
+        if ($placesSent) {
             Places::unlinkMoment($moment->slug);
-            Places::ensureCity(Places::ensureCountry($country), $city, $moment->slug);
+            foreach ($links as [$country, $city]) {
+                Places::ensureCity(Places::ensureCountry($country), $city, $moment->slug);
+            }
         }
 
         if (isset($data['date_start']) || array_key_exists('date_end', $data)) {
@@ -102,6 +112,46 @@ class MomentController extends Controller
         Places::unlinkMoment($slug);
 
         return response()->json(null, 204);
+    }
+
+    /**
+     * Vyberie z dát miesta pre mapu a pri zozname miest doplní `place`/`place_short`.
+     * Starší klient posiela jedno miesto cez `place` + `city`/`country` — funguje ďalej.
+     *
+     * @return array<int, array{0: string, 1: string}> dvojice [krajina, mesto]
+     */
+    private function takePlaces(array &$data): array
+    {
+        $links = [];
+
+        if (! empty($data['places'])) {
+            $data['places'] = array_values(array_map(fn ($p) => [
+                'label'   => trim($p['label']),
+                'short'   => filled($p['short'] ?? null) ? trim($p['short']) : null,
+                'city'    => filled($p['city'] ?? null) ? trim($p['city']) : null,
+                'country' => filled($p['country'] ?? null) ? trim($p['country']) : null,
+            ], $data['places']));
+
+            $data = [...$data, ...Places::summarize($data['places'])];
+
+            foreach ($data['places'] as $p) {
+                if ($p['city'] && $p['country']) {
+                    $links[] = [$p['country'], $p['city']];
+                }
+            }
+        } elseif (filled($data['country'] ?? null) && filled($data['city'] ?? null)) {
+            $links[] = [$data['country'], $data['city']];
+            // Jedno miesto po starom — zoznam by inak ostal visieť zo starej verzie.
+            if (array_key_exists('place', $data)) {
+                $data['places'] = null;
+            }
+        } elseif (array_key_exists('place', $data)) {
+            $data['places'] = null;
+        }
+
+        unset($data['country'], $data['city']);
+
+        return $links;
     }
 
     private function prepare(array $data): array
